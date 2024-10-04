@@ -1,4 +1,3 @@
 serial==0.0.97
 streamlit
 pandas
-serial.tools.list_ports
