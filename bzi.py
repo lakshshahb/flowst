@@ -4,90 +4,93 @@ import streamlit as st
 import pandas as pd
 import serial.tools.list_ports
 
-# Function to get available serial ports
+# Function to set up serial communication with Arduino
+def setup_serial(port='COM8', baudrate=9600, timeout=1):
+    try:
+        arduino = serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
+        if arduino.is_open:
+            st.success(f"Successfully connected to {port}")
+            return arduino
+        else:
+            st.error("Port is not open")
+    except serial.SerialException as e:
+        st.error(f"Error opening serial port: {e}")
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+    return None
+
+# Function to list available serial ports
 def get_serial_ports():
     ports = serial.tools.list_ports.comports()
     return [port.device for port in ports]
 
-# Function to set up serial communication with Arduino
-def setup_serial(port='COM8', baudrate=9600, timeout=1):
-    try:
-        return serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
-    except Exception as e:
-        st.error(f"Error opening serial port: {e}")
-        return None
-
 # Function to read data from Arduino
 def read_from_arduino(arduino):
+    if not arduino.is_open:
+        st.error("Attempting to use a port that is not open.")
+        return None
+
     try:
         arduino_data = arduino.readline().decode('utf-8').strip()
         if arduino_data:
             return arduino_data
     except Exception as e:
         st.error(f"Error reading from Arduino: {e}")
-        return None
+    return None
 
-# Initialize Streamlit app
+# Main app function for Streamlit
 def main():
-    # Streamlit layout
-    st.title("Flow Sensor Data Reader")
-    st.write("This app reads flow rate data from an Arduino connected to a flow sensor.")
+    st.title("Arduino Serial Data Interceptor with Real-Time Graph")
 
-    # Get available serial ports
+    # Get list of available serial ports
     available_ports = get_serial_ports()
-    selected_port = st.selectbox("Select Serial Port", available_ports)
+    port = st.sidebar.selectbox("Select COM Port", available_ports)
 
-    # Set up serial connection
-    arduino = setup_serial(port=selected_port, baudrate=9600)  # Use selected port
-    if not arduino:
-        st.stop()  # Stop the app if no serial connection is available
+    baudrate = st.sidebar.number_input("Baudrate", 9600)
 
-    # Create placeholders for the output and graph
-    data_placeholder = st.empty()
-    chart_placeholder = st.empty()
+    if st.sidebar.button("Connect"):
+        arduino = setup_serial(port=port, baudrate=baudrate)
 
-    # Initialize empty lists for storing data
-    liter_per_hour_list = []
-    rps_list = []
-    time_list = []
-    start_time = time.time()
+        if arduino:
+            data_placeholder = st.empty()
+            chart_placeholder = st.empty()
 
-    # Start reading data
-    while True:
-        # Read data from Arduino
-        data = read_from_arduino(arduino)
-        
-        if data:
-            # Expecting data format: "Flow rate: <value> L/h"
-            try:
-                flow_rate_str = data.split("Flow rate: ")[1].split(" L/h")[0]
-                liter_per_hour = float(flow_rate_str)
-            except (IndexError, ValueError):
-                liter_per_hour = None
-            
-            # Update the time and data lists
-            current_time = time.time() - start_time
-            if liter_per_hour is not None:
-                liter_per_hour_list.append(liter_per_hour)
-                rps = liter_per_hour / 60.0  # Example calculation for RPS
-                rps_list.append(rps)
-                time_list.append(current_time)
+            data_list = []
+            time_list = []
+            start_time = time.time()
 
-                # Display the latest readings
-                data_placeholder.write(f"Flow Rate: {liter_per_hour:.2f} L/h | Rotations: {rps:.2f} RPS")
+            if 'paused' not in st.session_state:
+                st.session_state['paused'] = False
 
-                # Create a DataFrame for plotting
-                chart_data = pd.DataFrame({
-                    "Time (s)": time_list,
-                    "Flow Rate (L/h)": liter_per_hour_list,
-                    "Rotations (RPS)": rps_list
-                })
-                
-                # Create a line chart
-                chart_placeholder.line_chart(chart_data.set_index("Time (s)"))
+            if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
+                st.session_state['paused'] = not st.session_state['paused']
 
-        # Delay between reads
-        time.sleep(1)
+            while True:
+                if not st.session_state['paused']:
+                    data = read_from_arduino(arduino)
+                    if data:
+                        try:
+                            flow_rate = float(data)
+                        except ValueError:
+                            flow_rate = None
+
+                        if flow_rate is not None:
+                            current_time = time.time() - start_time
+                            data_list.append(flow_rate)
+                            time_list.append(current_time)
+
+                            data_placeholder.write(f"Flow Data Received: {flow_rate} L/min")
+                            chart_data = pd.DataFrame({"Time": time_list, "Flow Rate": data_list})
+                            chart_placeholder.line_chart(chart_data.set_index("Time"))
+
+                stop = st.sidebar.button("Stop")
+                if stop:
+                    break
+
+                time.sleep(1)
+
+            arduino.close()
+            st.success("Disconnected from Arduino.")
 
 if __name__ == "__main__":
     main()
