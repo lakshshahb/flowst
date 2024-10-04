@@ -1,11 +1,16 @@
 import serial
+import serial.tools.list_ports
 import time
 import streamlit as st
 import pandas as pd
-import serial.tools.list_ports
+
+# Function to list available serial ports
+def get_serial_ports():
+    ports = serial.tools.list_ports.comports()
+    return [port.device for port in ports]
 
 # Function to set up serial communication with Arduino
-def setup_serial(port='COM8', baudrate=9600, timeout=1):
+def setup_serial(port, baudrate=9600, timeout=1):
     try:
         arduino = serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
         if arduino.is_open:
@@ -18,11 +23,6 @@ def setup_serial(port='COM8', baudrate=9600, timeout=1):
     except Exception as e:
         st.error(f"Unexpected error: {e}")
     return None
-
-# Function to list available serial ports
-def get_serial_ports():
-    ports = serial.tools.list_ports.comports()
-    return [port.device for port in ports]
 
 # Function to read data from Arduino
 def read_from_arduino(arduino):
@@ -44,53 +44,62 @@ def main():
 
     # Get list of available serial ports
     available_ports = get_serial_ports()
-    port = st.sidebar.selectbox("Select COM Port", available_ports)
+    
+    # Check if any ports are found
+    if len(available_ports) == 0:
+        st.error("No available serial ports found. Please check your connections.")
+    else:
+        # Display the available ports
+        st.write("Available Serial Ports:", available_ports)
+        
+        # Select port from dropdown
+        port = st.sidebar.selectbox("Select COM Port", available_ports)
+        baudrate = st.sidebar.number_input("Baudrate", 9600)
+        
+        # Button to connect to Arduino
+        if st.sidebar.button("Connect"):
+            arduino = setup_serial(port=port, baudrate=baudrate)
 
-    baudrate = st.sidebar.number_input("Baudrate", 9600)
+            if arduino:
+                data_placeholder = st.empty()
+                chart_placeholder = st.empty()
 
-    if st.sidebar.button("Connect"):
-        arduino = setup_serial(port=port, baudrate=baudrate)
+                data_list = []
+                time_list = []
+                start_time = time.time()
 
-        if arduino:
-            data_placeholder = st.empty()
-            chart_placeholder = st.empty()
+                if 'paused' not in st.session_state:
+                    st.session_state['paused'] = False
 
-            data_list = []
-            time_list = []
-            start_time = time.time()
+                if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
+                    st.session_state['paused'] = not st.session_state['paused']
 
-            if 'paused' not in st.session_state:
-                st.session_state['paused'] = False
+                while True:
+                    if not st.session_state['paused']:
+                        data = read_from_arduino(arduino)
+                        if data:
+                            try:
+                                flow_rate = float(data)
+                            except ValueError:
+                                flow_rate = None
 
-            if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
-                st.session_state['paused'] = not st.session_state['paused']
+                            if flow_rate is not None:
+                                current_time = time.time() - start_time
+                                data_list.append(flow_rate)
+                                time_list.append(current_time)
 
-            while True:
-                if not st.session_state['paused']:
-                    data = read_from_arduino(arduino)
-                    if data:
-                        try:
-                            flow_rate = float(data)
-                        except ValueError:
-                            flow_rate = None
+                                data_placeholder.write(f"Flow Data Received: {flow_rate} L/min")
+                                chart_data = pd.DataFrame({"Time": time_list, "Flow Rate": data_list})
+                                chart_placeholder.line_chart(chart_data.set_index("Time"))
 
-                        if flow_rate is not None:
-                            current_time = time.time() - start_time
-                            data_list.append(flow_rate)
-                            time_list.append(current_time)
+                    stop = st.sidebar.button("Stop")
+                    if stop:
+                        break
 
-                            data_placeholder.write(f"Flow Data Received: {flow_rate} L/min")
-                            chart_data = pd.DataFrame({"Time": time_list, "Flow Rate": data_list})
-                            chart_placeholder.line_chart(chart_data.set_index("Time"))
+                    time.sleep(1)
 
-                stop = st.sidebar.button("Stop")
-                if stop:
-                    break
-
-                time.sleep(1)
-
-            arduino.close()
-            st.success("Disconnected from Arduino.")
+                arduino.close()
+                st.success("Disconnected from Arduino.")
 
 if __name__ == "__main__":
     main()
