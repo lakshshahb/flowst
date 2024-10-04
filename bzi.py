@@ -2,7 +2,7 @@ import serial
 import time
 import streamlit as st
 import pandas as pd
-from serial import tools.list_ports
+import pyserial
 
 # Function to get available serial ports
 def get_serial_ports():
