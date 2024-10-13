@@ -1,4 +1,5 @@
-streamlit==latest_version  # Replace latest_version with a specific version if needed
-pandas==latest_version
-numpy==latest_version
-pyserial==latest_version  # pyserial for serial communication
+streamlit
+pandas
+numpy
+pyserial
+
