@@ -17,26 +17,31 @@ def setup_serial(port, baudrate=9600, timeout=1):
             st.success(f"Successfully connected to {port}")
             return arduino
         else:
-            st.error("Port is not open")
+            st.error("Failed to open the selected port.")
+            return None
     except serial.SerialException as e:
         st.error(f"Error opening serial port: {e}")
+        return None
     except Exception as e:
         st.error(f"Unexpected error: {e}")
-    return None
+        return None
 
 # Function to read data from Arduino
 def read_from_arduino(arduino):
-    if not arduino.is_open:
-        st.error("Attempting to use a port that is not open.")
-        return None
-
     try:
-        arduino_data = arduino.readline().decode('utf-8').strip()
-        if arduino_data:
-            return arduino_data
+        if arduino.is_open:
+            arduino_data = arduino.readline().decode('utf-8').strip()
+            if arduino_data:
+                return arduino_data
+        else:
+            st.error("Serial port is not open.")
+            return None
+    except serial.SerialException as e:
+        st.error(f"Serial port error: {e}")
+        return None
     except Exception as e:
         st.error(f"Error reading from Arduino: {e}")
-    return None
+        return None
 
 # Main app function for Streamlit
 def main():
@@ -44,62 +49,71 @@ def main():
 
     # Get list of available serial ports
     available_ports = get_serial_ports()
-    
+
     # Check if any ports are found
     if len(available_ports) == 0:
         st.error("No available serial ports found. Please check your connections.")
-    else:
-        # Display the available ports
-        st.write("Available Serial Ports:", available_ports)
-        
-        # Select port from dropdown
-        port = st.sidebar.selectbox("Select COM Port", available_ports)
-        baudrate = st.sidebar.number_input("Baudrate", 9600)
-        
-        # Button to connect to Arduino
-        if st.sidebar.button("Connect"):
-            arduino = setup_serial(port=port, baudrate=baudrate)
+        return
 
-            if arduino:
-                data_placeholder = st.empty()
-                chart_placeholder = st.empty()
+    # Display the available ports for selection
+    st.write("Available Serial Ports:", available_ports)
 
-                data_list = []
-                time_list = []
-                start_time = time.time()
+    # Select port from dropdown and set baudrate
+    port = st.sidebar.selectbox("Select COM Port", available_ports)
+    baudrate = st.sidebar.number_input("Baudrate", value=9600, step=1)
 
-                if 'paused' not in st.session_state:
-                    st.session_state['paused'] = False
+    # Button to connect to Arduino
+    if st.sidebar.button("Connect"):
+        arduino = setup_serial(port=port, baudrate=baudrate)
 
-                if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
-                    st.session_state['paused'] = not st.session_state['paused']
+        # Proceed if connection is successful
+        if arduino:
+            data_placeholder = st.empty()
+            chart_placeholder = st.empty()
 
-                while True:
-                    if not st.session_state['paused']:
-                        data = read_from_arduino(arduino)
-                        if data:
-                            try:
-                                flow_rate = float(data)
-                            except ValueError:
-                                flow_rate = None
+            # Lists to store data
+            data_list = []
+            time_list = []
+            start_time = time.time()
 
-                            if flow_rate is not None:
-                                current_time = time.time() - start_time
-                                data_list.append(flow_rate)
-                                time_list.append(current_time)
+            # Pause/Resume handling
+            if 'paused' not in st.session_state:
+                st.session_state['paused'] = False
 
-                                data_placeholder.write(f"Flow Data Received: {flow_rate} L/min")
-                                chart_data = pd.DataFrame({"Time": time_list, "Flow Rate": data_list})
-                                chart_placeholder.line_chart(chart_data.set_index("Time"))
+            if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
+                st.session_state['paused'] = not st.session_state['paused']
 
-                    stop = st.sidebar.button("Stop")
-                    if stop:
-                        break
+            # Main loop to read data
+            while True:
+                # If not paused, read data from the serial port
+                if not st.session_state['paused']:
+                    data = read_from_arduino(arduino)
+                    if data:
+                        try:
+                            flow_rate = float(data)
+                        except ValueError:
+                            st.error(f"Non-numeric data received: {data}")
+                            flow_rate = None
 
-                    time.sleep(1)
+                        if flow_rate is not None:
+                            current_time = time.time() - start_time
+                            data_list.append(flow_rate)
+                            time_list.append(current_time)
 
-                arduino.close()
-                st.success("Disconnected from Arduino.")
+                            # Update the display and chart
+                            data_placeholder.write(f"Flow Data Received: {flow_rate} L/min")
+                            chart_data = pd.DataFrame({"Time": time_list, "Flow Rate": data_list})
+                            chart_placeholder.line_chart(chart_data.set_index("Time"))
+
+                # Stop button to close connection
+                if st.sidebar.button("Stop"):
+                    break
+
+                time.sleep(1)
+
+            # Ensure the serial port is closed
+            arduino.close()
+            st.success("Disconnected from Arduino.")
 
 if __name__ == "__main__":
     main()
