@@ -4,30 +4,30 @@ import time
 import streamlit as st
 import pandas as pd
 
-# 1. Function to list available serial ports
+# Function to list available serial ports
 def get_serial_ports():
     ports = serial.tools.list_ports.comports()
     return [port.device for port in ports]
 
-# 2. Function to set up serial communication with Arduino (with increased timeout, debugging, and manual port option)
-def setup_serial(port, baudrate=9600, timeout=5):  # Option 4: Increased timeout
-    st.write(f"Attempting to connect to {port} with baudrate {baudrate} and timeout {timeout}")
+# Function to set up serial communication with Arduino
+def setup_serial(port, baudrate=9600, timeout=1):
     try:
         arduino = serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
-        st.write(f"Port is open: {arduino.is_open}")
         if arduino.is_open:
             st.success(f"Successfully connected to {port}")
             return arduino
+        else:
+            st.error("Port is not open")
     except serial.SerialException as e:
-        st.error(f"Error opening serial port: {e}. Check if the port is being used by another application.")  # Option 6: More detailed error handling
+        st.error(f"Error opening serial port: {e}")
     except Exception as e:
         st.error(f"Unexpected error: {e}")
     return None
 
-# 3. Function to read data from Arduino with more detailed error messages
+# Function to read data from Arduino
 def read_from_arduino(arduino):
     if not arduino.is_open:
-        st.error("Attempting to use a port that is not open.")  # Option 5: Check if the port is open
+        st.error("Attempting to use a port that is not open.")
         return None
 
     try:
@@ -42,31 +42,25 @@ def read_from_arduino(arduino):
 def main():
     st.title("Arduino Serial Data Interceptor with Real-Time Graph")
 
-    # 4. Get list of available serial ports
+    # Get list of available serial ports
     available_ports = get_serial_ports()
-    
+
     # Check if any ports are found
     if len(available_ports) == 0:
         st.error("No available serial ports found. Please check your connections.")
+        # Allow manual input if no ports are detected
+        port = st.sidebar.text_input("Enter COM Port manually", "")
     else:
-        # 5. Display available ports with manual port entry option
-        st.write("Available Serial Ports:", available_ports)
-        
-        # Allow user to manually select port from dropdown
+        # Display the available ports in a selectbox
         port = st.sidebar.selectbox("Select COM Port", available_ports)
-        
-        # Manual port entry option in case the dropdown doesn't show correct ports
-        manual_port = st.sidebar.text_input("Or manually enter COM Port (e.g., COM3 or /dev/ttyUSB0)", "")
-        if manual_port:
-            port = manual_port
 
-        baudrate = st.sidebar.number_input("Baudrate", 9600)
-        
-        # Button to connect to Arduino
-        if st.sidebar.button("Connect"):
+    # Get baudrate input
+    baudrate = st.sidebar.number_input("Baudrate", 9600)
+
+    # Button to connect to Arduino
+    if st.sidebar.button("Connect"):
+        if port:
             arduino = setup_serial(port=port, baudrate=baudrate)
-
-            # If connection is successful, proceed
             if arduino:
                 data_placeholder = st.empty()
                 chart_placeholder = st.empty()
@@ -75,14 +69,12 @@ def main():
                 time_list = []
                 start_time = time.time()
 
-                # 6. Ensure pause functionality
                 if 'paused' not in st.session_state:
                     st.session_state['paused'] = False
 
                 if st.sidebar.button("Pause" if not st.session_state['paused'] else "Resume"):
                     st.session_state['paused'] = not st.session_state['paused']
 
-                # Main loop to read data
                 while True:
                     if not st.session_state['paused']:
                         data = read_from_arduino(arduino)
@@ -107,8 +99,10 @@ def main():
 
                     time.sleep(1)
 
-                arduino.close()  # Ensure the serial port is properly closed
+                arduino.close()
                 st.success("Disconnected from Arduino.")
+        else:
+            st.error("Please select or enter a valid COM port.")
 
 if __name__ == "__main__":
     main()
