@@ -3,7 +3,6 @@ import time
 import streamlit as st
 import pandas as pd
 import serial.tools.list_ports
-import matplotlib.pyplot as plt
 
 # Function to get available serial ports
 def get_serial_ports():
@@ -28,19 +27,6 @@ def read_from_arduino(arduino):
         st.error(f"Error reading from Arduino: {e}")
         return None
 
-# Function to plot the data
-def plot_data(time_list, liter_per_hour_list, rps_list):
-    plt.figure(figsize=(10, 5))
-    plt.plot(time_list, liter_per_hour_list, label='Flow Rate (L/h)', color='blue')
-    plt.plot(time_list, rps_list, label='Rotations (RPS)', color='orange')
-    plt.xlabel("Time (s)")
-    plt.ylabel("Values")
-    plt.title("Flow Rate and Rotations Over Time")
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    st.pyplot(plt)
-
 # Initialize Streamlit app
 def main():
     # Streamlit layout
@@ -49,6 +35,11 @@ def main():
 
     # Get available serial ports
     available_ports = get_serial_ports()
+
+    if not available_ports:
+        st.error("No available serial ports found. Please check your connections.")
+        return
+
     selected_port = st.selectbox("Select Serial Port", available_ports)
 
     # Set up serial connection
@@ -56,43 +47,52 @@ def main():
     if not arduino:
         st.stop()  # Stop the app if no serial connection is available
 
+    # Create placeholders for the output and graph
+    data_placeholder = st.empty()
+    chart_placeholder = st.empty()
+
     # Initialize empty lists for storing data
     liter_per_hour_list = []
     rps_list = []
     time_list = []
     start_time = time.time()
 
-    # Create a button to start data collection
-    if st.button("Start Reading Data"):
-        # Start reading data
-        while True:
-            # Read data from Arduino
-            data = read_from_arduino(arduino)
+    # Start reading data
+    while True:
+        # Read data from Arduino
+        data = read_from_arduino(arduino)
+        
+        if data:
+            # Expecting data format: "Flow rate: <value> L/h"
+            try:
+                flow_rate_str = data.split("Flow rate: ")[1].split(" L/h")[0]
+                liter_per_hour = float(flow_rate_str)
+            except (IndexError, ValueError):
+                liter_per_hour = None
             
-            if data:
-                # Expecting data format: "Flow rate: <value> L/h"
-                try:
-                    flow_rate_str = data.split("Flow rate: ")[1].split(" L/h")[0]
-                    liter_per_hour = float(flow_rate_str)
-                except (IndexError, ValueError):
-                    liter_per_hour = None
+            # Update the time and data lists
+            current_time = time.time() - start_time
+            if liter_per_hour is not None:
+                liter_per_hour_list.append(liter_per_hour)
+                rps = liter_per_hour / 60.0  # Example calculation for RPS
+                rps_list.append(rps)
+                time_list.append(current_time)
+
+                # Display the latest readings
+                data_placeholder.write(f"Flow Rate: {liter_per_hour:.2f} L/h | Rotations: {rps:.2f} RPS")
+
+                # Create a DataFrame for plotting
+                chart_data = pd.DataFrame({
+                    "Time (s)": time_list,
+                    "Flow Rate (L/h)": liter_per_hour_list,
+                    "Rotations (RPS)": rps_list
+                })
                 
-                # Update the time and data lists
-                current_time = time.time() - start_time
-                if liter_per_hour is not None:
-                    liter_per_hour_list.append(liter_per_hour)
-                    rps = liter_per_hour / 60.0  # Example calculation for RPS
-                    rps_list.append(rps)
-                    time_list.append(current_time)
+                # Create a line chart
+                chart_placeholder.line_chart(chart_data.set_index("Time (s)"))
 
-                    # Display the latest readings
-                    st.write(f"Flow Rate: {liter_per_hour:.2f} L/h | Rotations: {rps:.2f} RPS")
-
-                    # Plot the data
-                    plot_data(time_list, liter_per_hour_list, rps_list)
-
-            # Delay between reads
-            time.sleep(1)
+        # Delay between reads
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
