@@ -3,5 +3,5 @@ pandas
 numpy
 pyserial
 matplotlib
-fpdf
+FPDF
 io
