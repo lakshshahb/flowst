@@ -1,4 +1,5 @@
 import streamlit as st
+import pyserial
 import serial
 import pandas as pd
 import time
