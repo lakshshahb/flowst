@@ -22,7 +22,7 @@ time_list = []
 
 if connect_button:
     try:
-        # Initialize Serial Communication
+        # Try initializing the serial port
         ser = serial.Serial(serial_port, baud_rate, timeout=1)
         st.success(f"Connected to {serial_port} at {baud_rate} baud.")
         
@@ -66,5 +66,10 @@ if connect_button:
                 # Small delay to prevent overloading
                 time.sleep(0.1)
     
-    except Exception as e:
-        st.error(f"Error: {e}")
+    except serial.SerialException as e:
+        st.error(f"Could not open port {serial_port}. Error: {e}")
+        st.stop()
+
+    except FileNotFoundError:
+        st.error(f"The port {serial_port} does not exist. Check your connection and try again.")
+        st.stop()
